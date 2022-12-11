@@ -10,7 +10,7 @@ class Channel(BaseModel):
     Valid: bool
     units: str
     AlertState: int
-    WindDirection: float
+    WindDirection: Union[float, None]
     WindSpeed: Union[float, None]
 
 

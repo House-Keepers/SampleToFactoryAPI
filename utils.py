@@ -29,7 +29,7 @@ def check_materials(pollution_data: pd.DataFrame, factories_data: pd.DataFrame) 
     :return: factories that have the same materials
     """
     pollution_data = break_channel_id(pollution_data)
-    pollution_materials = pollution_data.loc[pollution_data[pollution_data['AlertState'] > 0].index, 'BrokenChannel']
+    pollution_materials = pollution_data.loc[pollution_data[pollution_data['AlertState'] > 0].index, ['BrokenChannel', 'pollutant_symbol', 'Id']]
     if pollution_materials.empty:
         return pollution_materials
     factories_pollutants = factories_data[['name', 'pollutant_name']].drop_duplicates()
@@ -38,15 +38,15 @@ def check_materials(pollution_data: pd.DataFrame, factories_data: pd.DataFrame) 
     for factory_name, factory_pollutants in factories_pollutants.groupby(by='name'):
         crossed_pollutant = cross_check_materials(factory_pollutants, pollution_materials)
         if not crossed_pollutant.empty:
-            crossed_pollutant_str = ','.join(crossed_pollutant)
+            crossed_pollutant_str = ','.join(crossed_pollutant.apply(str))
             factories_pollutants.loc[
                 factories_pollutants['name'] == factory_name, 'crossed_pollutants'] = crossed_pollutant_str
             factories_pollutants.loc[factories_pollutants['name'] == factory_name, 'num_pollutants'] = len(
                 crossed_pollutant)
-    return factories_pollutants
+    return factories_pollutants.dropna(subset="crossed_pollutants")
 
 
-def cross_check_materials(factory_pollutants: pd.DataFrame, pollution_materials: pd.Series) -> pd.Series:
+def cross_check_materials(factory_pollutants: pd.DataFrame, pollution_materials: pd.DataFrame) -> pd.Series:
     """
     check if the factory pollutants are the same as the alert cause materials
     :param factory_pollutants: the names of the pollutants emitted from the factory
@@ -54,9 +54,9 @@ def cross_check_materials(factory_pollutants: pd.DataFrame, pollution_materials:
     """
     factory_pollutants['pollutant_name'] = factory_pollutants['pollutant_name'].apply(
         lambda x: x.strip().replace("  ", " "))
-    crossed_materials = pollution_materials.apply(
+    crossed_materials = pollution_materials['BrokenChannel'].apply(
         lambda x: any([fa_pol in x for fa_pol in factory_pollutants['pollutant_name']]))
-    return pollution_materials[crossed_materials]
+    return pollution_materials.loc[crossed_materials, 'Id']
 
 
 def break_channel_id(pollution_data: pd.DataFrame) -> pd.DataFrame:
@@ -69,6 +69,7 @@ def break_channel_id(pollution_data: pd.DataFrame) -> pd.DataFrame:
     channels_data = get_channels_data()
     merged_data = pollution_data.merge(channels_data, how="left", left_on='Id', right_on='Id')
     pollution_data['BrokenChannel'] = merged_data['Description']
+    pollution_data['pollutant_symbol'] = merged_data['Name_x']
     return pollution_data
 
 
@@ -97,6 +98,7 @@ def factory_in_wind(sensor: pd.Series, factories_data: pd.Series, wind_dir: pd.S
         delta_y = sensor['latitude'] - factory_coords['x']
         angle = math.atan(delta_y / delta_x) * 180 / math.pi
         angle %= 360
+        print("Sensor To Factory Angle:", angle, "\n", "Reciprocal Wind Direction:", wind_dir,"\n--------------------")
         if wind_area[0] < angle < wind_area[1]:
             angle_diff = angle - wind_dir
             angle_diff = (angle_diff + 180) % 360 if abs(angle_diff) > 180 else angle_diff
